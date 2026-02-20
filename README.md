@@ -6,12 +6,13 @@ A Pterodactyl egg for deploying Laravel applications with **PHP-FPM + Nginx** in
 
 - **PHP version selector** — Choose PHP 8.2, 8.3, or 8.4 from the panel dropdown
 - **All-in-one container** — PHP-FPM and Nginx running together
+- **Dynamic port binding** — Nginx automatically listens on the Pterodactyl allocated port
 - **Git integration** — Clone and auto-update from public or private repositories
 - **Composer + NPM** — Automatic dependency installation and asset building
 - **Laravel Artisan** — Key generation, migrations, storage link, custom commands
 - **Background services** — Queue worker, Horizon, task scheduler, Reverb WebSockets
-- **Cloudflare Tunnel** — Built-in cloudflared for secure exposure
-- **Auto-tuning** — PHP-FPM worker count scaled to allocated memory
+- **Cloudflare Tunnel** — Built-in cloudflared for secure public exposure
+- **Auto-tuning** — PHP-FPM worker count scaled to allocated server memory
 - **20+ PHP extensions** — bcmath, curl, gd, imagick, intl, mbstring, mysql, pgsql, sqlite3, redis, xml, zip, opcache, sodium, and more
 
 ## Prerequisites
@@ -23,11 +24,13 @@ A Pterodactyl egg for deploying Laravel applications with **PHP-FPM + Nginx** in
 ## Installation
 
 1. Download `egg-laravel.json` from this repository
-2. In Pterodactyl Panel, go to **Admin → Nests → Import Egg**
+2. In Pterodactyl Panel, go to **Admin -> Nests -> Import Egg**
 3. Upload the JSON file and save
 4. Create a new server using the **Laravel** egg
-5. Set the Git repository URL and other variables
-6. Start the server
+5. Select the desired PHP version from the Docker image dropdown
+6. Allocate a port (this is the port Nginx will listen on)
+7. Set the Git repository URL and other variables
+8. Start the server
 
 ## Docker Images
 
@@ -36,6 +39,32 @@ A Pterodactyl egg for deploying Laravel applications with **PHP-FPM + Nginx** in
 | `ghcr.io/cerbonix/laravel-egg:8.4` | PHP 8.4 | Recommended |
 | `ghcr.io/cerbonix/laravel-egg:8.3` | PHP 8.3 | Supported |
 | `ghcr.io/cerbonix/laravel-egg:8.2` | PHP 8.2 | Supported |
+
+Images are built for `linux/amd64` and `linux/arm64` and rebuilt weekly for security patches.
+
+## How It Works
+
+### Startup Flow
+
+```
+entrypoint.sh (yolks pattern: {{VAR}} substitution + exec)
+  └── start.sh (orchestrator)
+        ├── Phase 0: Setup (directories, configs, FPM auto-tuning)
+        ├── Phase 1: Git (clone or pull)
+        ├── Phase 2: Dependencies (composer install, npm build)
+        ├── Phase 3: Laravel (.env sync, key:generate, migrate, optimize)
+        ├── Phase 4: Background services (queue, scheduler, websockets)
+        ├── Phase 5: Network (Cloudflare Tunnel)
+        └── Phase 6: Start (PHP-FPM daemonized, Nginx foreground)
+```
+
+### Port Binding
+
+Nginx listens on the port allocated by Pterodactyl (`SERVER_PORT` environment variable). This is injected into the Nginx config at startup. You do **not** need to configure port 80 — just allocate a port in the panel and it works.
+
+### Config Persistence
+
+Configuration files are copied to `/home/container/conf/` on first startup. These files persist across restarts in the Pterodactyl volume. To reset configs to defaults, delete the `conf/` directory via the panel file manager and restart.
 
 ## Variables
 
@@ -96,7 +125,23 @@ A Pterodactyl egg for deploying Laravel applications with **PHP-FPM + Nginx** in
 | `ENABLE_SCHEDULER` | `0` | Run task scheduler |
 | `ENABLE_WEBSOCKETS` | `0` | Start Reverb WebSocket server |
 
-### SSL / Cloudflare
+### Cloudflare Tunnel
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CLOUDFLARE_TOKEN` | — | Cloudflare Tunnel token (leave empty to disable) |
+
+To use Cloudflare Tunnel:
+
+1. Go to [Cloudflare Zero Trust](https://one.dash.cloudflare.com/) -> Networks -> Tunnels
+2. Create a tunnel and copy the token
+3. Paste the token in `CLOUDFLARE_TOKEN`
+4. In the tunnel config, set the service to `http://localhost:<your-allocated-port>`
+5. Restart the server — cloudflared starts automatically in the background
+
+This lets Cloudflare handle HTTPS publicly while the container stays on plain HTTP. No certificate management needed.
+
+### SSL (Let's Encrypt)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -104,7 +149,6 @@ A Pterodactyl egg for deploying Laravel applications with **PHP-FPM + Nginx** in
 | `CERTBOT_EMAIL` | — | Email for certificate registration |
 | `CERTBOT_DOMAIN` | — | Domain for the certificate |
 | `CERTBOT_STAGING` | `0` | Use staging server for testing |
-| `CLOUDFLARE_TOKEN` | — | Cloudflare Tunnel token |
 
 ### Advanced
 
@@ -112,7 +156,7 @@ A Pterodactyl egg for deploying Laravel applications with **PHP-FPM + Nginx** in
 |----------|---------|-------------|
 | `USER_UPLOAD` | `0` | Skip git clone (upload files via SFTP) |
 | `CUSTOM_ARTISAN` | — | Comma-separated artisan commands to run |
-| `WS_PORT` | `6001` | WebSocket server port |
+| `WS_PORT` | `6001` | WebSocket server port (needs secondary allocation) |
 
 ## Deployment Examples
 
@@ -132,6 +176,15 @@ A Pterodactyl egg for deploying Laravel applications with **PHP-FPM + Nginx** in
 5. Set Redis variables to point to your Redis egg
 6. Start the server
 
+### Laravel + Cloudflare Tunnel (HTTPS)
+
+1. Configure as above
+2. Create a Cloudflare Tunnel in the Zero Trust dashboard
+3. Set `CLOUDFLARE_TOKEN` to the tunnel token
+4. Configure the tunnel service URL: `http://localhost:<allocated-port>`
+5. Point your domain DNS to the tunnel
+6. Start the server — accessible via HTTPS through Cloudflare
+
 ### Laravel + Scheduled Tasks
 
 1. Configure as above
@@ -144,7 +197,7 @@ A Pterodactyl egg for deploying Laravel applications with **PHP-FPM + Nginx** in
 /home/container/
 ├── www/                    # Laravel application root
 │   └── public/             # Web root (Nginx document root)
-├── conf/                   # User-editable configuration
+├── conf/                   # User-editable configuration (persistent)
 │   ├── nginx/
 │   │   ├── nginx.conf
 │   │   └── conf.d/
@@ -164,6 +217,21 @@ A Pterodactyl egg for deploying Laravel applications with **PHP-FPM + Nginx** in
 - PHP-FPM may have failed to start. Check `logs/php-fpm-error.log`
 - Verify the PHP-FPM socket exists: the startup log should show "Starting PHP-FPM"
 
+### PHP-FPM fails with "failed to chown() the socket"
+- This means the pool config has `listen.owner`/`listen.group` directives
+- Pterodactyl drops `CAP_CHOWN` from containers
+- Fix: remove those directives from `conf/php/pool.d/www.conf` (or reinstall the server to get fresh configs)
+
+### Site not accessible / connection refused
+- Check that Nginx is listening on the correct port in the startup logs ("Nginx will listen on port XXXX")
+- The port must match the allocation in the Pterodactyl panel
+- If the port is wrong, delete `conf/nginx/conf.d/default.conf` via the file manager and restart
+
+### Browser forces HTTPS redirect
+- This is a browser-side HSTS cache issue, not the server
+- Chrome: go to `chrome://net-internals/#hsts` -> Delete domain security policies
+- Or use incognito mode as a workaround
+
 ### Composer install fails
 - Check that `GIT_ADDRESS` is correct and the repo contains a `composer.json`
 - For private repos, ensure `GIT_USERNAME` and `GIT_ACCESS_TOKEN` are set
@@ -182,6 +250,31 @@ A Pterodactyl egg for deploying Laravel applications with **PHP-FPM + Nginx** in
 - Verify `APP_KEY` is set (check `.env` file via SFTP)
 - Check `logs/nginx-error.log` for PHP errors
 
+### Config changes not applying after image update
+- Configs in `conf/` are persistent and copied only on first run
+- To reset: delete the `conf/` directory via the panel file manager, then restart
+- Or reinstall the server from the panel
+
+## Wings Security Recommendations
+
+If you host multiple users on the same Pterodactyl node, disable inter-container communication:
+
+In `/etc/pterodactyl/config.yml`:
+```yaml
+docker:
+  network:
+    enable_icc: false
+```
+
+Then apply the change:
+```bash
+systemctl stop wings
+docker network rm pterodactyl_nw
+systemctl start wings
+```
+
+This prevents containers from scanning or accessing each other on the Docker network while still allowing internet access (needed for Composer, Git, NPM).
+
 ## Local Development
 
 Build the image locally:
@@ -197,11 +290,10 @@ docker run --rm laravel-egg:8.4 php -v
 docker run --rm laravel-egg:8.4 php -m
 ```
 
-Verify user:
+Test with Pterodactyl-like environment:
 
 ```bash
-docker run --rm laravel-egg:8.4 id
-# Expected: uid=1000(container) gid=1000(container)
+docker run --rm -e STARTUP="/bin/bash /start.sh" -e SERVER_PORT=8080 -p 8080:8080 laravel-egg:8.4
 ```
 
 ## License
