@@ -317,6 +317,11 @@ if [ ! -S /home/container/tmp/php-fpm.sock ]; then
     error_exit "PHP-FPM socket not found — check logs at /home/container/logs/"
 fi
 
+# Inject Pterodactyl allocated port into Nginx config (default: 80)
+LISTEN_PORT="${SERVER_PORT:-80}"
+sed -i "s/{{SERVER_PORT}}/${LISTEN_PORT}/g" /home/container/conf/nginx/conf.d/default.conf
+log "Nginx will listen on port ${LISTEN_PORT}"
+
 log "Starting Nginx..."
 echo "Services successfully launched"
 
