@@ -44,8 +44,8 @@ error_exit() {
 PHP_VERSION=$(cat /etc/php_version)
 log "Detected PHP ${PHP_VERSION}"
 
-# Create required directories
-mkdir -p /home/container/{logs,tmp/sessions,tmp/nginx/{client_body,proxy,fastcgi,uwsgi,scgi},conf/nginx/conf.d,conf/php/pool.d,www/public}
+# Create required directories (www/public created after git phase to avoid blocking clone)
+mkdir -p /home/container/{logs,tmp/sessions,tmp/nginx/{client_body,proxy,fastcgi,uwsgi,scgi},conf/nginx/conf.d,conf/php/pool.d}
 
 # Copy default configs if absent (first run or reset)
 if [ ! -f /home/container/conf/nginx/nginx.conf ]; then
@@ -127,6 +127,9 @@ if [ -n "${GIT_ADDRESS:-}" ]; then
 else
     log "No GIT_ADDRESS set — skipping git operations"
 fi
+
+# Ensure www/public exists (after git to avoid blocking clone)
+mkdir -p /home/container/www/public
 
 # =============================================================================
 # Phase 2 : Dependencies
