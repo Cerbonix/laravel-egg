@@ -1,0 +1,384 @@
+{
+    "_comment": "Pterodactyl Laravel Egg — PHP-FPM + Nginx (all-in-one)",
+    "meta": {
+        "version": "PTDL_v2",
+        "update_url": null
+    },
+    "exported_at": "2026-02-20T00:00:00+00:00",
+    "name": "Laravel",
+    "author": "alex@example.com",
+    "description": "A Laravel egg with PHP-FPM and Nginx in a single container.\r\n\r\nSupports Git cloning, Composer, NPM builds, Artisan commands, queue workers, Horizon, task scheduling, WebSockets (Reverb), Cloudflare Tunnels, and automatic SSL.\r\n\r\nPHP version is selectable via the Docker image dropdown (8.2, 8.3, 8.4).",
+    "features": null,
+    "docker_images": {
+        "PHP 8.4 (Recommended)": "ghcr.io\/cerbonix\/laravel-egg:8.4",
+        "PHP 8.3": "ghcr.io\/cerbonix\/laravel-egg:8.3",
+        "PHP 8.2": "ghcr.io\/cerbonix\/laravel-egg:8.2"
+    },
+    "file_denylist": [],
+    "startup": "\/bin\/bash \/start.sh",
+    "config": {
+        "files": "{}",
+        "startup": "{\"done\": \"Services successfully launched\"}",
+        "logs": "{}",
+        "stop": "^C"
+    },
+    "scripts": {
+        "installation": {
+            "script": "#!\/bin\/bash\r\n# Laravel Egg — Installation Script\r\n# Runs inside the installer container to prepare \/mnt\/server\r\n\r\napt update\r\napt install -y git curl jq\r\n\r\nmkdir -p \/mnt\/server\r\ncd \/mnt\/server\r\n\r\n# Create directory structure\r\nmkdir -p www\/public logs tmp\/sessions tmp\/nginx\r\nmkdir -p conf\/nginx\/conf.d conf\/php\/pool.d\r\n\r\n# Handle user-uploaded files\r\nif [ \"${USER_UPLOAD}\" = \"1\" ]; then\r\n    echo \"User upload mode — skipping git clone and config download.\"\r\n    exit 0\r\nfi\r\n\r\n# Download default configs from the repository\r\nREPO_RAW=\"https:\/\/raw.githubusercontent.com\/cerbonix\/laravel-egg\/main\"\r\n\r\necho \"Downloading default configuration files...\"\r\ncurl -sSL \"${REPO_RAW}\/conf\/nginx\/nginx.conf\"         -o conf\/nginx\/nginx.conf\r\ncurl -sSL \"${REPO_RAW}\/conf\/nginx\/conf.d\/default.conf\" -o conf\/nginx\/conf.d\/default.conf\r\ncurl -sSL \"${REPO_RAW}\/conf\/php\/php.ini\"               -o conf\/php\/php.ini\r\ncurl -sSL \"${REPO_RAW}\/conf\/php\/php-fpm.conf\"          -o conf\/php\/php-fpm.conf\r\ncurl -sSL \"${REPO_RAW}\/conf\/php\/pool.d\/www.conf\"       -o conf\/php\/pool.d\/www.conf\r\n\r\n# Clone Git repository if address is provided\r\nif [ -n \"${GIT_ADDRESS}\" ]; then\r\n    # Append .git if missing\r\n    if [[ ${GIT_ADDRESS} != *.git ]]; then\r\n        GIT_ADDRESS=${GIT_ADDRESS}.git\r\n    fi\r\n\r\n    # Build authenticated URL if credentials provided\r\n    GIT_URL=\"${GIT_ADDRESS}\"\r\n    if [ -n \"${GIT_USERNAME}\" ] && [ -n \"${GIT_ACCESS_TOKEN}\" ]; then\r\n        GIT_URL=\"https:\/\/${GIT_USERNAME}:${GIT_ACCESS_TOKEN}@$(echo ${GIT_ADDRESS} | cut -d\/ -f3-)\"\r\n    fi\r\n\r\n    echo \"Cloning repository...\"\r\n    if [ -n \"${GIT_BRANCH}\" ]; then\r\n        git clone --single-branch --branch ${GIT_BRANCH} ${GIT_URL} \/mnt\/server\/www\r\n    else\r\n        git clone ${GIT_URL} \/mnt\/server\/www\r\n    fi\r\n\r\n    # Copy .env.example to .env if present\r\n    if [ -f \/mnt\/server\/www\/.env.example ]; then\r\n        cp \/mnt\/server\/www\/.env.example \/mnt\/server\/www\/.env\r\n        echo \"Copied .env.example to .env\"\r\n    fi\r\nelse\r\n    echo \"No GIT_ADDRESS provided — creating default index.php\"\r\n    echo '<?php phpinfo();' > \/mnt\/server\/www\/public\/index.php\r\nfi\r\n\r\necho \"Installation complete.\"\r\nexit 0",
+            "container": "ghcr.io\/ptero-eggs\/installers:debian",
+            "entrypoint": "bash"
+        }
+    },
+    "variables": [
+        {
+            "name": "Git Repository Address",
+            "description": "The HTTPS URL of the Git repository to clone.\r\n\r\nExample: https:\/\/github.com\/laravel\/laravel",
+            "env_variable": "GIT_ADDRESS",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "field_type": "text"
+        },
+        {
+            "name": "Git Branch",
+            "description": "The branch to clone. Leave empty for the default branch.",
+            "env_variable": "GIT_BRANCH",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "field_type": "text"
+        },
+        {
+            "name": "Git Username",
+            "description": "Username for private repository authentication.",
+            "env_variable": "GIT_USERNAME",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "field_type": "text"
+        },
+        {
+            "name": "Git Access Token",
+            "description": "Personal Access Token for private repository authentication.\r\n\r\nhttps:\/\/github.com\/settings\/tokens",
+            "env_variable": "GIT_ACCESS_TOKEN",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "field_type": "text"
+        },
+        {
+            "name": "Auto Update",
+            "description": "Pull the latest changes from Git on each startup.\r\n\r\n0 = disabled (default)\r\n1 = enabled",
+            "env_variable": "AUTO_UPDATE",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "App Name",
+            "description": "The Laravel application name (APP_NAME in .env).",
+            "env_variable": "APP_NAME",
+            "default_value": "Laravel",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:64",
+            "field_type": "text"
+        },
+        {
+            "name": "App Environment",
+            "description": "The application environment.\r\n\r\nCommon values: production, staging, local",
+            "env_variable": "APP_ENV",
+            "default_value": "production",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:20",
+            "field_type": "text"
+        },
+        {
+            "name": "App Debug",
+            "description": "Enable debug mode. Set to false in production.\r\n\r\ntrue = enabled\r\nfalse = disabled (default)",
+            "env_variable": "APP_DEBUG",
+            "default_value": "false",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|in:true,false",
+            "field_type": "text"
+        },
+        {
+            "name": "App URL",
+            "description": "The public URL of the application.\r\n\r\nExample: https:\/\/myapp.example.com",
+            "env_variable": "APP_URL",
+            "default_value": "http:\/\/localhost",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string",
+            "field_type": "text"
+        },
+        {
+            "name": "App Key",
+            "description": "Laravel encryption key (base64:...). Leave empty to auto-generate on first start.",
+            "env_variable": "APP_KEY",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "field_type": "text"
+        },
+        {
+            "name": "Database Connection",
+            "description": "The database driver to use.\r\n\r\nSupported: mysql, pgsql, sqlite, sqlsrv",
+            "env_variable": "DB_CONNECTION",
+            "default_value": "mysql",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|in:mysql,pgsql,sqlite,sqlsrv",
+            "field_type": "text"
+        },
+        {
+            "name": "Database Host",
+            "description": "The hostname or IP of the database server.",
+            "env_variable": "DB_HOST",
+            "default_value": "127.0.0.1",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string",
+            "field_type": "text"
+        },
+        {
+            "name": "Database Port",
+            "description": "The database server port.\r\n\r\nMySQL: 3306 | PostgreSQL: 5432",
+            "env_variable": "DB_PORT",
+            "default_value": "3306",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|between:1,65535",
+            "field_type": "text"
+        },
+        {
+            "name": "Database Name",
+            "description": "The name of the database to use.",
+            "env_variable": "DB_DATABASE",
+            "default_value": "laravel",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:64",
+            "field_type": "text"
+        },
+        {
+            "name": "Database Username",
+            "description": "The database user.",
+            "env_variable": "DB_USERNAME",
+            "default_value": "root",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:64",
+            "field_type": "text"
+        },
+        {
+            "name": "Database Password",
+            "description": "The database password.",
+            "env_variable": "DB_PASSWORD",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "field_type": "text"
+        },
+        {
+            "name": "Redis Host",
+            "description": "The hostname or IP of the Redis server.",
+            "env_variable": "REDIS_HOST",
+            "default_value": "127.0.0.1",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string",
+            "field_type": "text"
+        },
+        {
+            "name": "Redis Port",
+            "description": "The Redis server port.",
+            "env_variable": "REDIS_PORT",
+            "default_value": "6379",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|between:1,65535",
+            "field_type": "text"
+        },
+        {
+            "name": "Redis Password",
+            "description": "The Redis password. Leave empty if no authentication is required.",
+            "env_variable": "REDIS_PASSWORD",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "field_type": "text"
+        },
+        {
+            "name": "Enable NPM Build",
+            "description": "Run NPM install and build on startup.\r\n\r\n0 = disabled (default)\r\n1 = enabled",
+            "env_variable": "ENABLE_NPM",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "NPM Build Command",
+            "description": "The NPM build command to run.\r\n\r\nDefault: npm run build",
+            "env_variable": "NPM_BUILD_CMD",
+            "default_value": "npm run build",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "field_type": "text"
+        },
+        {
+            "name": "Enable Migrations",
+            "description": "Run database migrations on startup.\r\n\r\n0 = disabled (default)\r\n1 = enabled",
+            "env_variable": "ENABLE_MIGRATE",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Enable Queue Worker",
+            "description": "Start a background queue worker on startup.\r\n\r\n0 = disabled (default)\r\n1 = enabled",
+            "env_variable": "ENABLE_QUEUE",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Queue Connection",
+            "description": "The queue driver to use.\r\n\r\nCommon values: sync, database, redis, sqs",
+            "env_variable": "QUEUE_CONNECTION",
+            "default_value": "sync",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:20",
+            "field_type": "text"
+        },
+        {
+            "name": "Enable Horizon",
+            "description": "Use Laravel Horizon instead of the default queue worker.\r\nRequires the laravel\/horizon package.\r\n\r\n0 = disabled (default)\r\n1 = enabled",
+            "env_variable": "ENABLE_HORIZON",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Enable Scheduler",
+            "description": "Run the Laravel task scheduler in the background.\r\n\r\n0 = disabled (default)\r\n1 = enabled",
+            "env_variable": "ENABLE_SCHEDULER",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Enable WebSockets",
+            "description": "Start Laravel Reverb WebSocket server.\r\nRequires the laravel\/reverb package.\r\n\r\n0 = disabled (default)\r\n1 = enabled",
+            "env_variable": "ENABLE_WEBSOCKETS",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Enable SSL",
+            "description": "Enable automatic SSL via Certbot (Let's Encrypt).\r\nRequires CERTBOT_EMAIL and CERTBOT_DOMAIN to be set.\r\n\r\n0 = disabled (default)\r\n1 = enabled",
+            "env_variable": "ENABLE_SSL",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Certbot Email",
+            "description": "Email address for Let's Encrypt certificate registration.",
+            "env_variable": "CERTBOT_EMAIL",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|email",
+            "field_type": "text"
+        },
+        {
+            "name": "Certbot Domain",
+            "description": "The domain name for the SSL certificate.\r\n\r\nExample: myapp.example.com",
+            "env_variable": "CERTBOT_DOMAIN",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "field_type": "text"
+        },
+        {
+            "name": "Certbot Staging",
+            "description": "Use Let's Encrypt staging server for testing.\r\n\r\n0 = production (default)\r\n1 = staging",
+            "env_variable": "CERTBOT_STAGING",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Cloudflare Tunnel Token",
+            "description": "Cloudflare Tunnel token for exposing the application.\r\nLeave empty to disable.\r\n\r\nGet a token from the Cloudflare Zero Trust dashboard.",
+            "env_variable": "CLOUDFLARE_TOKEN",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "field_type": "text"
+        },
+        {
+            "name": "User Uploaded Files",
+            "description": "Skip Git clone during installation. Use this when uploading files manually via SFTP.\r\n\r\n0 = disabled (default)\r\n1 = enabled",
+            "env_variable": "USER_UPLOAD",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Custom Artisan Commands",
+            "description": "Comma-separated list of artisan commands to run on startup.\r\n\r\nExample: db:seed, cache:clear, route:cache",
+            "env_variable": "CUSTOM_ARTISAN",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "field_type": "text"
+        },
+        {
+            "name": "WebSocket Port",
+            "description": "The port for the Laravel Reverb WebSocket server.\r\nRequires a secondary allocation in Pterodactyl.",
+            "env_variable": "WS_PORT",
+            "default_value": "6001",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|between:1,65535",
+            "field_type": "text"
+        }
+    ]
+}

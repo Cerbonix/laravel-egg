@@ -1,0 +1,74 @@
+# =============================================================================
+# CI/CD — Build multi-arch Docker images and push to ghcr.io
+# Builds PHP 8.2, 8.3, 8.4 images for linux/amd64 + linux/arm64
+# =============================================================================
+
+name: Build and Push Docker Images
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  schedule:
+    # Weekly rebuild for security patches (Sunday 3:00 UTC)
+    - cron: "0 3 * * 0"
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/laravel-egg
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php_version: ["8.2", "8.3", "8.4"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU (multi-arch support)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            # Tag with PHP version (e.g., :8.4)
+            type=raw,value=${{ matrix.php_version }}
+            # Tag :latest only for PHP 8.4
+            type=raw,value=latest,enable=${{ matrix.php_version == '8.4' }}
+            # Tag with git tag if present (e.g., :v1.0.0-8.4)
+            type=semver,pattern={{version}}-${{ matrix.php_version }},enable=${{ startsWith(github.ref, 'refs/tags/') }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            PHP_VERSION=${{ matrix.php_version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
