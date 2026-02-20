@@ -57,7 +57,7 @@ fi
 if [ ! -f /home/container/conf/php/php-fpm.conf ]; then
     log "Copying default PHP-FPM config..."
     cp /etc/laravel-egg/conf/php/php-fpm.conf /home/container/conf/php/php-fpm.conf
-    cp -r /etc/laravel-egg/conf/php/pool.d/ /home/container/conf/php/pool.d/
+    cp /etc/laravel-egg/conf/php/pool.d/*.conf /home/container/conf/php/pool.d/
 fi
 
 if [ ! -f /home/container/conf/php/php.ini ]; then

@@ -24,7 +24,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         lsb-release \
         git \
         unzip \
-        tini \
         iproute2 \
         cron \
         nginx \
@@ -80,16 +79,18 @@ RUN useradd -m -d /home/container -s /bin/bash -u 1000 container
 COPY --chown=container:container conf/ /etc/laravel-egg/conf/
 
 # --- Scripts ----------------------------------------------------------------
-COPY --chown=container:container scripts/entrypoint.sh /entrypoint.sh
 COPY --chown=container:container scripts/start.sh /start.sh
-RUN chmod +x /entrypoint.sh /start.sh
+RUN chmod +x /start.sh
 
 # --- Nginx: allow non-root to bind and write --------------------------------
 RUN chown -R container:container /var/lib/nginx /var/log/nginx /run
 
-STOPSIGNAL SIGINT
-WORKDIR /home/container
-USER container
+# --- Pterodactyl standard pattern ------------------------------------------
+USER        container
+ENV         USER=container HOME=/home/container
+WORKDIR     /home/container
 
-ENTRYPOINT ["/usr/bin/tini", "-g", "--"]
-CMD ["/entrypoint.sh"]
+STOPSIGNAL SIGINT
+
+COPY        --chown=container:container scripts/entrypoint.sh /entrypoint.sh
+CMD         ["/bin/bash", "/entrypoint.sh"]
