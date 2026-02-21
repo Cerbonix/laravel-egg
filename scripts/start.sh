@@ -217,6 +217,14 @@ if [ -f /home/container/www/artisan ]; then
     if [ -z "${CURRENT_KEY}" ] || [ "${CURRENT_KEY}" = "" ]; then
         log "Generating application key..."
         php artisan key:generate --force --no-interaction
+        CURRENT_KEY=$(grep "^APP_KEY=" "${ENV_FILE}" 2>/dev/null | cut -d= -f2-)
+    fi
+
+    # Pterodactyl injects all egg variables as system env vars, including empty
+    # APP_KEY. Laravel reads system env vars BEFORE .env, so the empty var wins.
+    # Export the real key to override the empty system env var.
+    if [ -n "${CURRENT_KEY}" ]; then
+        export APP_KEY="${CURRENT_KEY}"
     fi
 
     # Storage symlink
