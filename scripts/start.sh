@@ -209,6 +209,9 @@ if [ -f /home/container/www/artisan ]; then
 
     update_env "QUEUE_CONNECTION" "${QUEUE_CONNECTION:-sync}"
 
+    # Trust all proxies — container is never directly exposed (behind Docker + Wings)
+    update_env "TRUSTED_PROXIES" "*"
+
     # Generate APP_KEY if not set
     CURRENT_KEY=$(grep "^APP_KEY=" "${ENV_FILE}" 2>/dev/null | cut -d= -f2-)
     if [ -z "${CURRENT_KEY}" ] || [ "${CURRENT_KEY}" = "" ]; then
